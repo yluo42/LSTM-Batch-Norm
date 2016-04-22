@@ -223,17 +223,10 @@ class LSTMLayer(MergeLayer):
         if self.batch_norm:
             # add 4 batch norm layers for i, f, c and o
             n_time_step = input_shape[1]
-            bn_shape = (n_time_step, self.batch_size, num_units)
+            bn_shape = (n_time_step, self.batch_size, 4*num_units)
             
-            self.bn_i = SequenceBatchNorm(bn_shape, axes=(0,1))  # create BN layer for correct input shape
-            self.bn_f = SequenceBatchNorm(bn_shape, axes=(0,1))  # create BN layer for correct input shape
-            self.bn_c = SequenceBatchNorm(bn_shape, axes=(0,1))  # create BN layer for correct input shape
-            self.bn_o = SequenceBatchNorm(bn_shape, axes=(0,1))  # create BN layer for correct input shape
-            self.params.update(self.bn_i.params)  # make BN params your params
-            self.params.update(self.bn_f.params)  # make BN params your params
-            self.params.update(self.bn_c.params)  # make BN params your params
-            self.params.update(self.bn_o.params)  # make BN params your params
-            
+            self.bn = SequenceBatchNorm(bn_shape, axes=(0,1))  # create BN layer for correct input shape
+            self.params.update(self.bn.params)  # make BN params your params
             
         # If peephole (cell to gate) connections were enabled, initialize
         # peephole connections.  These are elementwise products with the cell
@@ -340,13 +333,13 @@ class LSTMLayer(MergeLayer):
             # precompute_input the inputs dot weight matrices before scanning.
             # W_in_stacked is (n_features, 4*num_units). input is then
             # (n_time_steps, n_batch, 4*num_units).
-            if not self.batch_norm:
-                # Stack input weight matrices into a (num_inputs, 4*num_units)
-                # matrix, which speeds up computation
-                W_in_stacked = T.concatenate(
-                    [self.W_in_to_ingate, self.W_in_to_forgetgate,
-                     self.W_in_to_cell, self.W_in_to_outgate], axis=1)
-                
+            
+            # Stack input weight matrices into a (num_inputs, 4*num_units)
+            # matrix, which speeds up computation
+            W_in_stacked = T.concatenate(
+                [self.W_in_to_ingate, self.W_in_to_forgetgate,
+                 self.W_in_to_cell, self.W_in_to_outgate], axis=1)
+            if not self.batch_norm:    
                 # Stack biases into a (4*num_units) vector
                 b_stacked = T.concatenate(
                     [self.b_ingate, self.b_forgetgate,
@@ -354,12 +347,7 @@ class LSTMLayer(MergeLayer):
                          
                 input = T.dot(input, W_in_stacked) + b_stacked
             else:
-                input_i = self.bn_i.get_output_for(T.dot(input, self.W_in_to_ingate), mask, **kwargs)
-                input_f = self.bn_f.get_output_for(T.dot(input, self.W_in_to_forgetgate), mask, **kwargs)
-                input_c = self.bn_c.get_output_for(T.dot(input, self.W_in_to_cell), mask, **kwargs)
-                input_o = self.bn_o.get_output_for(T.dot(input, self.W_in_to_outgate), mask, **kwargs)
-                # concatenate
-                input = T.concatenate([input_i, input_f, input_c, input_o], axis=2)
+                input = self.bn.get_output_for(T.dot(input, W_in_stacked), mask, **kwargs)
                 
         else:
             # Stack input weight matrices into a (num_inputs, 4*num_units)
